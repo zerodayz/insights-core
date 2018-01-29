@@ -55,8 +55,22 @@ def add_status(name, nvr, commit):
     RULES_STATUS[name] = {"version": nvr, "commit": commit}
 
 
+def persist_output(broker, output_dir):
+    from insights.core.serde import persister
+    from insights.util import fs
+
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
+    to_save = [datasource, parser, combiner, rule, incident]
+    for _type in to_save:
+        path = os.path.join(output_dir, dr.get_simple_name(_type))
+        fs.ensure_path(path)
+        broker.add_observer(persister(path), _type)
+
+
 def _run(graph=None, root=None, run_context=HostContext,
-         archive_context=HostArchiveContext):
+         archive_context=HostArchiveContext, output_dir=None):
     """
     run is a general interface that is meant for stand alone scripts to use
     when executing insights components.
@@ -77,6 +91,8 @@ def _run(graph=None, root=None, run_context=HostContext,
     broker = dr.Broker()
 
     if not root:
+        if output_dir:
+            persist_output(broker, output_dir)
         broker[run_context] = run_context()
         return dr.run(graph, broker=broker)
 
@@ -84,8 +100,8 @@ def _run(graph=None, root=None, run_context=HostContext,
         broker[archive_context] = archive_context(root=root)
         return dr.run(graph, broker=broker)
 
-    from insights.util.content_type import _magic
-    if _magic.file(root) == "application/zip":
+    from insights.util import content_type
+    if content_type.from_file(root) == "application/zip":
         extractor = archives.ZipExtractor()
     else:
         extractor = archives.TarExtractor()
@@ -108,7 +124,7 @@ def _load_context(path):
 
 
 def run(component=None, root=None, print_summary=False,
-        run_context=HostContext, archive_context=HostArchiveContext):
+        run_context=HostContext, archive_context=HostArchiveContext, output_dir=None):
 
     from .core import dr
     dr.load_components("insights.specs_default")
@@ -153,7 +169,7 @@ def run(component=None, root=None, print_summary=False,
     else:
         graph = dr.COMPONENTS[dr.GROUPS.single]
 
-    broker = _run(graph, root, run_context=run_context, archive_context=archive_context)
+    broker = _run(graph, root, run_context, archive_context, output_dir)
     if print_summary:
 
         if args.missing:

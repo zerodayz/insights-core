@@ -13,8 +13,6 @@ from utilities import (generate_machine_id,
                        write_to_disk,
                        write_unregistered_file,
                        determine_hostname)
-from collection_rules import InsightsConfig
-from data_collector import DataCollector
 from connection import InsightsConnection
 from archive import InsightsArchive
 from support import registration_check
@@ -258,209 +256,28 @@ def get_branch_info():
     return branch_info
 
 
+def create_tar_file(path):
+    from subprocess import call, PIPE
+    import shutil
+    import shlex
+
+    name = "./booger.tar.gz"
+    call(shlex.split("tar czf %s -C %s ." % (name, path)), stderr=PIPE)
+    logger.debug("Tar File Size: %s", str(os.path.getsize(name)))
+    shutil.rmtree(path)
+    return name
+
+
 def collect(rc=0):
     """
     All the heavy lifting done here
     Run through "targets" - could be just ONE (host, default) or ONE (container/image)
     """
-    # initialize collection targets
-    # tar files
-    if config['analyze_file'] is not None:
-        logger.debug("Client analyzing a compress filesystem.")
-        targets = [{'type': 'compressed_file',
-                    'name': os.path.splitext(
-                        os.path.basename(config['analyze_file']))[0],
-                    'location': config['analyze_file']}]
-
-    # mountpoints
-    elif config['analyze_mountpoint'] is not None:
-        logger.debug("Client analyzing a filesystem already mounted.")
-        targets = [{'type': 'mountpoint',
-                    'name': os.path.splitext(
-                        os.path.basename(config['analyze_mountpoint']))[0],
-                    'location': config['analyze_mountpoint']}]
-
-    # container mode
-    elif config['container_mode']:
-        logger.debug("Client running in container/image mode.")
-        logger.debug("Scanning for matching container/image.")
-
-        from containers import get_targets
-        targets = get_targets()
-
-    # the host
-    else:
-        logger.debug("Host selected as scanning target.")
-        targets = constants.default_target
-
-    # if there are no targets to scan then bail
-    if not len(targets):
-        logger.debug("No targets were found. Exiting.")
-        return False
-    logger.debug("Found targets: ")
-    logger.debug(targets)
-
-    branch_info = get_branch_info()
-    pc = InsightsConfig()
-    tar_file = None
-
-    # load config from stdin/file if specified
-    try:
-        stdin_config = {}
-        if config['from_file']:
-            with open(config['from_file'], 'r') as f:
-                stdin_config = json.load(f)
-        elif config['from_stdin']:
-            stdin_config = json.load(sys.stdin)
-        if ((config['from_file'] or config['from_stdin']) and
-            ('uploader.json' not in stdin_config or
-             'sig' not in stdin_config)):
-            raise ValueError
-        if ((config['from_file'] or config['from_stdin']) and
-                'branch_info' in stdin_config and stdin_config['branch_info'] is not None):
-            branch_info = stdin_config['branch_info']
-    except:
-        logger.error('ERROR: Invalid config for %s! Exiting...',
-                     ('--from-file' if config['from_file'] else '--from-stdin'))
-        return False
-
-    collection_rules, rm_conf = pc.get_conf(False, stdin_config)
-    individual_archives = []
-
-    for t in targets:
-        # defaults
-        archive = None
-        container_connection = None
-        mp = None
-        compressed_filesystem = None
-        # archive metadata
-        archive_meta = {}
-
-        try:
-
-            # analyze docker images
-            if t['type'] == 'docker_image':
-
-                from containers import open_image
-                container_connection = open_image(t['name'])
-                logging_name = 'Docker image ' + t['name']
-                archive_meta['docker_id'] = t['name']
-
-                from containers import docker_display_name
-                archive_meta['display_name'] = docker_display_name(
-                    t['name'], t['type'].replace('docker_', ''))
-
-                logger.debug('Docker display_name: %s', archive_meta['display_name'])
-                logger.debug('Docker docker_id: %s', archive_meta['docker_id'])
-
-                if container_connection:
-                    mp = container_connection.get_fs()
-                else:
-                    logger.error('Could not open %s for analysis', logging_name)
-                    return False
-
-            # analyze docker containers
-            elif t['type'] == 'docker_container':
-                from containers import open_container
-                container_connection = open_container(t['name'])
-
-                logging_name = 'Docker container ' + t['name']
-                archive_meta['docker_id'] = t['name']
-
-                from containers import docker_display_name
-                archive_meta['display_name'] = docker_display_name(
-                    t['name'], t['type'].replace('docker_', ''))
-                logger.debug('Docker display_name: %s', archive_meta['display_name'])
-                logger.debug('Docker docker_id: %s', archive_meta['docker_id'])
-
-                if container_connection:
-                    mp = container_connection.get_fs()
-                else:
-                    logger.error('Could not open %s for analysis', logging_name)
-                    return False
-
-            # analyze compressed files
-            elif t['type'] == 'compressed_file':
-
-                logging_name = 'Compressed file ' + t['name'] + ' at location ' + t['location']
-
-                from compressed_file import InsightsCompressedFile
-                compressed_filesystem = InsightsCompressedFile(t['location'])
-
-                if compressed_filesystem.is_tarfile is False:
-                    logger.debug("Could not access compressed tar filesystem.")
-                    return False
-
-                mp = compressed_filesystem.get_filesystem_path()
-
-            # analyze mountpoints
-            elif t['type'] == 'mountpoint':
-
-                logging_name = 'Filesystem ' + t['name'] + ' at location ' + t['location']
-                mp = config['analyze_mountpoint']
-
-            # analyze the host
-            elif t['type'] == 'host':
-                logging_name = determine_hostname()
-                archive_meta['display_name'] = determine_hostname(config['display_name'])
-
-            # nothing found to analyze
-            else:
-                logger.error('Unexpected analysis target: %s', t['type'])
-                return False
-
-            archive_meta['type'] = t['type'].replace('docker_', '')
-            archive_meta['product'] = 'Docker'
-
-            machine_id = generate_analysis_target_id(t['type'], t['name'])
-            archive_meta['system_id'] = machine_id
-            archive_meta['machine_id'] = machine_id
-
-            archive = InsightsArchive(compressor=config['compressor']
-                                      if not config['container_mode'] else "none",
-                                      target_name=t['name'])
-
-            # determine the target type and begin collection
-            # we infer "docker_image" SPEC analysis for certain types
-            if t['type'] in ["mountpoint", "compressed_file"]:
-                target_type = "docker_image"
-            else:
-                target_type = t['type']
-            logger.debug("Inferring target_type '%s' for SPEC collection", target_type)
-            logger.debug("Inferred from '%s'", t['type'])
-            dc = DataCollector(archive,
-                               config,
-                               mountpoint=mp,
-                               target_name=t['name'],
-                               target_type=target_type)
-
-            logger.info('Starting to collect Insights data for %s', logging_name)
-            dc.run_collection(collection_rules, rm_conf, branch_info)
-
-            # add custom metadata about a host if provided by from_file
-            # use in the OSE case
-            if config['from_file']:
-                with open(config['from_file'], 'r') as f:
-                    stdin_config = json.load(f)
-                    if 'metadata' in stdin_config:
-                        archive.add_metadata_to_archive(json.dumps(stdin_config['metadata']), 'metadata.json')
-
-            tar_file = dc.done(collection_rules, rm_conf)
-
-            # add archives to list of individual uploads
-            archive_meta['tar_file'] = tar_file
-            individual_archives.append(archive_meta)
-
-        finally:
-            # called on loop iter end or unexpected exit
-            if container_connection:
-                container_connection.close()
-
-    # cleanup the temporary stuff for analyzing tar files
-    if config['analyze_file'] is not None and compressed_filesystem is not None:
-        compressed_filesystem.cleanup_temp_filesystem()
-
-    return tar_file
+    import tempfile
+    from insights import run
+    tmpdir = tempfile.mkdtemp()
+    run(output_dir=tmpdir)
+    return create_tar_file(tmpdir)
 
 
 def get_connection():

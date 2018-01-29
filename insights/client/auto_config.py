@@ -24,8 +24,10 @@ def verify_connectivity():
     """
     Verify connectivity to satellite server
     """
+
     logger.debug("Verifying Connectivity")
     ic = InsightsConnection()
+
     try:
         branch_info = ic.branch_info()
     except requests.ConnectionError as e:
