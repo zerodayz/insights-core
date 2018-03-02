@@ -390,7 +390,7 @@ def foreach_collect(provider, path, ignore=None, context=HostContext, kind=TextF
             source = [source]
         for e in source:
             pattern = ctx.locate_path(path % e)
-            for p in ctx.shell_out("ls -1 " + os.path.join(root, pattern.lstrip('/'))):
+            for p in ctx.shell_out("ls -1 " + os.path.join(root, pattern.lstrip('/')), shell=True):
                 if ignore and re.search(ignore, p):
                     continue
                 try:
