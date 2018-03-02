@@ -5,7 +5,6 @@ import re
 import traceback
 
 from collections import defaultdict
-from glob import glob
 
 from insights.core import blacklist, dr
 from insights.core.filters import apply_filters
@@ -90,10 +89,11 @@ class ContentProvider(object):
 
 
 class FileProvider(ContentProvider):
-    def __init__(self, relative_path, root="/", ds=None):
+    def __init__(self, relative_path, root="/", ds=None, ctx=None):
         super(FileProvider, self).__init__()
         self.root = root
         self.relative_path = relative_path.lstrip("/")
+        self.ctx = ctx
 
         self.path = os.path.join(root, self.relative_path)
         self.file_name = os.path.basename(self.path)
@@ -105,25 +105,19 @@ class FileProvider(ContentProvider):
         if not blacklist.allow_file("/" + self.relative_path):
             raise dr.SkipComponent()
 
-        if not os.path.exists(self.path):
-            raise ContentException("%s does not exist." % self.path)
-
-        if not os.access(self.path, os.R_OK):
-            raise ContentException("Cannot access %s" % self.path)
-
     def __repr__(self):
         return '%s("%s")' % (self.__class__.__name__, self.path)
 
 
 class RawFileProvider(FileProvider):
     def load(self):
-        with open(self.path, 'rb') as f:
+        with self.ctx.read_file(self.path) as f:
             return f.read()
 
 
 class TextFileProvider(FileProvider):
     def load(self):
-        with open(self.path, 'r') as f:
+        with self.ctx.read_file(self.path) as f:
             if self.ds:
                 # This should shell out to a grep pipeline
                 return list(apply_filters(self.ds, (l.rstrip() for l in f)))
@@ -279,7 +273,7 @@ def simple_file(path, context=None, kind=TextFileProvider):
     @datasource(context or FSRoots, raw=(kind is RawFileProvider))
     def inner(broker):
         ctx = _get_context(context, FSRoots, broker)
-        return kind(ctx.locate_path(path), root=ctx.root, ds=inner)
+        return kind(ctx.locate_path(path), root=ctx.root, ds=inner, ctx=ctx)
     return inner
 
 
@@ -294,11 +288,11 @@ def glob_file(patterns, ignore=None, context=None, kind=TextFileProvider):
         results = []
         for pattern in patterns:
             pattern = ctx.locate_path(pattern)
-            for path in glob(os.path.join(root, pattern.lstrip('/'))):
+            for path in ctx.shell_out("ls -1 " + os.path.join(root, pattern.lstrip('/')), shell=True):
                 if ignore and re.search(ignore, path):
                     continue
                 try:
-                    results.append(kind(path[len(root):], root=root, ds=inner))
+                    results.append(kind(path[len(root):], root=root, ds=inner, ctx=ctx))
                 except:
                     log.debug(traceback.format_exc())
         if results:
@@ -315,7 +309,7 @@ def first_file(files, context=None, kind=TextFileProvider):
         root = ctx.root
         for f in files:
             try:
-                return kind(ctx.locate_path(f), root=root, ds=inner)
+                return kind(ctx.locate_path(f), root=root, ds=inner, ctx=ctx)
             except:
                 pass
         raise ContentException("None of [%s] found." % ', '.join(files))
@@ -329,10 +323,7 @@ def listdir(path, context=None):
         ctx = _get_context(context, FSRoots, broker)
         p = os.path.join(ctx.root, path.lstrip('/'))
         p = ctx.locate_path(p)
-        if os.path.isdir(p):
-            return os.listdir(p)
-
-        result = glob(p)
+        result = ctx.shell_out("ls -1 " + p, shell=True)
         if result:
             return [os.path.basename(r) for r in result]
         raise ContentException("Can't list %s or nothing there." % p)
@@ -399,11 +390,11 @@ def foreach_collect(provider, path, ignore=None, context=HostContext, kind=TextF
             source = [source]
         for e in source:
             pattern = ctx.locate_path(path % e)
-            for p in glob(os.path.join(root, pattern.lstrip('/'))):
+            for p in ctx.shell_out("ls -1 " + os.path.join(root, pattern.lstrip('/'))):
                 if ignore and re.search(ignore, p):
                     continue
                 try:
-                    result.append(kind(p[len(root):], root=root, ds=inner))
+                    result.append(kind(p[len(root):], root=root, ds=inner, ctx=ctx))
                 except:
                     log.debug(traceback.format_exc())
         if result:

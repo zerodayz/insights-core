@@ -1,7 +1,12 @@
+
 import logging
 import os
-from insights.util.subproc import call
+from contextlib import contextmanager
+
 from subprocess import STDOUT
+
+from insights.core.plugins import ContentException
+from insights.util.subproc import call
 
 log = logging.getLogger(__name__)
 GLOBAL_PRODUCTS = []
@@ -126,15 +131,15 @@ class ExecutionContext(object):
         self.timeout = timeout
         self.all_files = all_files or []
 
-    def check_output(self, cmd, timeout=None, keep_rc=False):
+    def check_output(self, cmd, timeout=None, keep_rc=False, shell=False):
         """ Subclasses can override to provide special
             environment setup, command prefixes, etc.
         """
-        return call(cmd, timeout=timeout or self.timeout, stderr=STDOUT, keep_rc=keep_rc)
+        return call(cmd, timeout=timeout or self.timeout, stderr=STDOUT, keep_rc=keep_rc, shell=shell)
 
-    def shell_out(self, cmd, split=True, timeout=None, keep_rc=False):
+    def shell_out(self, cmd, split=True, timeout=None, keep_rc=False, shell=False):
         rc = None
-        raw = self.check_output(cmd, timeout=timeout, keep_rc=keep_rc)
+        raw = self.check_output(cmd, timeout=timeout, keep_rc=keep_rc, shell=shell)
         if keep_rc:
             rc, output = raw
         else:
@@ -147,6 +152,17 @@ class ExecutionContext(object):
 
     def locate_path(self, path):
         return os.path.expandvars(path)
+
+    @contextmanager
+    def read_file(self, path):
+        if not os.path.exists(path):
+            raise ContentException("%s does not exist." % self.path)
+
+        if not os.access(path, os.R_OK):
+            raise ContentException("Cannot access %s" % self.path)
+
+        with open(path) as f:
+            yield f
 
     def __repr__(self):
         msg = "<%s('%s', %s)>"
