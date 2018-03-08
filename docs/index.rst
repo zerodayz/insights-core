@@ -17,10 +17,7 @@ Contents:
     rule_tutorial_index
     custom_tutorial_index
     combiner_tutorial
-    notebooks/Datasource Registry.ipynb
-    notebooks/Development Examples.ipynb
-    notebooks/Insights Core Tutorial.ipynb
-    notebooks/Rule Migration Guide.ipynb
+    notebook_index
 
 Indices and tables
 ==================
