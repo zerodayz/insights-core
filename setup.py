@@ -36,6 +36,7 @@ develop = set([
     'pytest-cov==2.4.0',
     'Sphinx',
     'nbsphinx',
+    'pandoc',
     'sphinx_rtd_theme',
     'futures==3.0.5',
     'requests==2.13.0',
