@@ -22,7 +22,7 @@ rhr=`cat $redhat_release`
 
 # either build up some json to return, or return "key: value" lines where each line
 # will split on the first colon to determine key and the rest of the line is the value.
-error_key is required
+# error_key is required
 
 echo error_key: example
 echo uname: $un
