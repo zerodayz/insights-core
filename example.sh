@@ -6,7 +6,7 @@
 # requires: hosts
 # requires: ethtool
 
-# multiple on a line means "at least of these" - must be comma delimited
+# multiple on a line means "at least one of these" - must be comma delimited
 # requires: redhat_release, uname
 
 # optional: lsblk
