@@ -45,7 +45,7 @@ class Script(object):
     def run(self, broker):
         """
         Creates an environment based on dependencies and executes the script
-        within it. Responsible for settings up file locations when necessary
+        within it. Responsible for setting up file locations when necessary
         and constructing the environment that exposes them to the script.
         """
         to_remove = []
@@ -226,5 +226,6 @@ def load(path, data):
     driver = dec(driver)
     setattr(mod, comp_name, driver)
 
+    # required in case we're in the default insights_scripts module
     script.log = logging.getLogger(dr.get_name(driver))
     return mod
