@@ -36,7 +36,8 @@ class Script(object):
             proc = Popen(self.args, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True, env=env)
             out, err = proc.communicate(self.data)
             if err:
-                self.log.warn(err)
+                for e in err.splitlines():
+                    self.log.warn(e)
             return out
         except Exception as ex:
             self.log.exception(ex)
