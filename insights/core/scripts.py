@@ -110,6 +110,7 @@ def parse_args(data):
         data (unicode): the string after "# requires:" or "# optional:" comment
 
     Returns:
+        A list of insights components loaded from insights.specs.Specs
     """
     default_comps = "insights.specs.Specs.%s"
 
