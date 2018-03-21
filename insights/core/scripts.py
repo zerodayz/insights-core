@@ -184,7 +184,7 @@ def load(path, data):
     Creates a module and component that integrates insights with an arbitrary
     script so it can participate as a rule. The module name is based on the
     dirname of path. The component's name is based on the basename of path with
-    the extention stripped. Scripts should write rule repsonse JSON to stdout.
+    the extention stripped. Scripts should write rule response JSON to stdout.
 
     Args:
         path (str): path to the script file
@@ -207,10 +207,12 @@ def load(path, data):
 
     mod = sys.modules[mod_name]
 
+    # this is the rule function that invokes the script and handles its
+    # response.
     def driver(broker):
         raw_result = script.run(broker)
-        result = {}
         if raw_result:
+            result = {}
             try:
                 result = json.loads(raw_result)
             except Exception:
@@ -218,7 +220,7 @@ def load(path, data):
                     key, value = line.split(":", 1)
                     result[key.strip()] = value.lstrip()
             result["type"] = "rule"
-        return result
+            return result
 
     driver.__module__ = mod_name
     driver.__name__ = comp_name
