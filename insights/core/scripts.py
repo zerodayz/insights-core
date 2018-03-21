@@ -191,8 +191,7 @@ def load(path, data):
         data (unicode): the content of the script file
 
     Returns:
-        the newly created module containing the insights component for the
-        script.
+        the newly created insights component for the script.
     """
     script = parse(path, data)
     if not script:
@@ -232,4 +231,4 @@ def load(path, data):
 
     # required in case we're in the default insights_scripts module
     script.log = logging.getLogger(dr.get_name(driver))
-    return mod
+    return driver
