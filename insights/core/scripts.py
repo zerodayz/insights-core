@@ -4,6 +4,7 @@ import logging
 import os
 import shlex
 import sys
+from contextlib import contextmanager
 from insights import dr, util
 from insights.core.plugins import make_rule_type
 from subprocess import Popen, PIPE
@@ -27,26 +28,13 @@ class Script(object):
         self.name, _, _ = path.replace("/", ".").rpartition(".")
         self.log = logging.getLogger(self.name)
 
-    def _run(self, env):
+    @contextmanager
+    def create_environment(self, broker):
         """
-        Runs the script in the given environment. stdout is returned, and stderr
-        is written to the logger.
-        """
-        try:
-            proc = Popen(self.args, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True, env=env)
-            out, err = proc.communicate(self.data)
-            if err:
-                for e in err.splitlines():
-                    self.log.warn(e)
-            return out
-        except Exception as ex:
-            self.log.exception(ex)
-
-    def run(self, broker):
-        """
-        Creates an environment based on dependencies and executes the script
-        within it. Responsible for setting up file locations when necessary
-        and constructing the environment that exposes them to the script.
+        Creates an environment based on dependencies and yields it for the
+        script to be executed within. Responsible for setting up file locations
+        when necessary and constructing the environment that exposes them to
+        the script.
         """
         to_remove = []
         env = {}
@@ -92,12 +80,26 @@ class Script(object):
             locate(opt.__name__, broker.get(opt))
 
         try:
-            out = self._run(env)
-            if out:
-                return out
+            yield env
         finally:
             for f in to_remove:
                 util.fs.remove(f)
+
+    def run(self, broker):
+        """
+        Runs the script in the given environment. stdout is returned, and
+        stderr is written to the logger.
+        """
+        with self.create_environment(broker) as env:
+            try:
+                proc = Popen(self.args, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True, env=env)
+                out, err = proc.communicate(self.data)
+                if err:
+                    for e in err.splitlines():
+                        self.log.warn(e)
+                return out if out else None
+            except Exception as ex:
+                self.log.exception(ex)
 
 
 def parse_args(data):
