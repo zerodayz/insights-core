@@ -2,11 +2,11 @@
 import logging
 
 from insights import run
-from insights.core.scripts import load
+
+# activate the importer and loader
+from insights.core import scripts  # noqa: F401
+from scripts import test
+from scripts.nested import test2
 
 logging.basicConfig(level=logging.INFO)
-
-path = "example.sh"
-with open(path, "U") as f:
-    component = load(path, f.read())
-    run(component, print_summary=True)
+run([test.report, test2.report], print_summary=True)

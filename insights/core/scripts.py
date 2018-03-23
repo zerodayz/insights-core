@@ -5,10 +5,14 @@ import os
 import shlex
 import sys
 from contextlib import contextmanager
-from insights import dr, util
-from insights.core.plugins import make_rule_type
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp, NamedTemporaryFile
+
+from insights import dr, util
+from insights.core.plugins import make_rule_type
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 class Script(object):
@@ -180,7 +184,7 @@ class ScriptType(dr.TypeSet):
     """
 
 
-def load(path, data):
+def load(path, data, mod_name=None):
     """
     Creates a module and component that integrates insights with an arbitrary
     script so it can participate as a rule. The module name is based on the
@@ -198,12 +202,15 @@ def load(path, data):
     if not script:
         return
 
-    default_module = "insights_scripts"
-    mod_name = os.path.dirname(path).replace("/", ".") or default_module
-    comp_name = os.path.basename(path).split(".")[0]
+    mod_path, _ = os.path.splitext(path)
+    mod_name = mod_name or mod_path.replace("/", ".")
+    comp_name = "report"
 
     if mod_name not in sys.modules:
-        sys.modules[mod_name] = imp.new_module(mod_name)
+        mod = imp.new_module(mod_name)
+        mod.__file__ = path
+        mod.__package__ = None
+        sys.modules[mod_name] = mod
 
     mod = sys.modules[mod_name]
 
@@ -232,4 +239,144 @@ def load(path, data):
 
     # required in case we're in the default insights_scripts module
     script.log = logging.getLogger(dr.get_name(driver))
-    return driver
+    return mod
+
+
+class ScriptImporter(object):
+    """ Hook into python's import machinery so standard import statements
+        can be used for scripts.
+    """
+    ext = (".py", ".pyc")
+
+    def __init__(self, path):
+        self.path = os.path.realpath(path)
+
+        if not os.path.exists(self.path):
+            raise ImportError()
+
+        self.files = os.listdir(self.path)
+
+        # we only allow __init__.py
+        if any(n.endswith(self.ext) and not n.startswith("__init__")
+               for n in self.files):
+            raise ImportError()
+
+    def find_module(self, fullname, paths=None):
+        """
+        Returns a ScriptLoader for script files.
+        """
+        name = fullname.split(".")[-1]
+        for f in self.files:
+            if f == name or f.startswith(name + "."):
+                name = f
+                break
+        else:
+            raise ImportError()
+
+        filename = os.path.join(self.path, name)
+        return ScriptLoader(filename)
+
+    def iter_modules(self, prefix=''):
+        """
+        Allows this importer to work with other pkgutil functions like
+        walk_packages.
+        """
+        if self.path is None or not os.path.isdir(self.path):
+            return
+
+        yielded = set()
+        import inspect
+        try:
+            filenames = os.listdir(self.path)
+        except OSError:
+            # ignore unreadable directories like import does
+            filenames = []
+        filenames.sort()  # handle packages before same-named modules
+
+        for fn in filenames:
+            modname = inspect.getmodulename(fn)
+            if not modname and not fn.endswith(self.ext):
+                modname = fn.rpartition(".")[0]
+
+            if modname == '__init__' or modname in yielded:
+                continue
+
+            path = os.path.join(self.path, fn)
+            ispkg = False
+
+            if not modname and os.path.isdir(path) and '.' not in fn:
+                modname = fn
+                try:
+                    dircontents = os.listdir(path)
+                except OSError:
+                    # ignore unreadable directories like import does
+                    dircontents = []
+                for fn in dircontents:
+                    subname = inspect.getmodulename(fn)
+                    if not subname and not fn.endswith(self.ext):
+                        subname = fn.partition(".")[0]
+                    if subname == '__init__':
+                        ispkg = True
+                        break
+                else:
+                    continue    # not a package
+
+            if modname and '.' not in modname:
+                yielded[modname] = 1
+                yield prefix + modname, ispkg
+
+
+class ScriptLoader(object):
+    def __init__(self, filename):
+        self.filename = filename
+        self.source = None
+
+    def is_package(self, fullname):
+        return os.path.isdir(self.filename)
+
+    def get_source(self, fullname=None):
+        if self.source is None:
+            return self._get_source()
+        return self.source
+
+    def get_code(self, fullname):
+        mod = self.load_module(fullname)
+        report = getattr("report", mod)
+        return report.func_code
+
+    def _get_source(self):
+        try:
+            with open(self.filename, "U") as f:
+                return f.read()
+        except Exception as ex:
+            log.exception(ex)
+            raise ImportError()
+
+    def get_filename(self, path=None):
+        return self.filename
+
+    def load_module(self, fullname):
+        try:
+            return sys.modules[fullname]
+        except KeyError:
+            pass
+
+        if self.is_package(fullname):
+            mod = sys.modules.setdefault(fullname, imp.new_module(fullname))
+            mod.__loader__ = self
+            mod.__path__ = [self.filename]
+            mod.__package__ = fullname
+            return mod
+
+        try:
+            mod = load(self.filename, self.get_source(), fullname)
+            mod.__loader__ = self
+            mod.__file__ = self.filename
+            mod.__package__ = fullname.rpartition(".")[0]
+            return mod
+        except Exception as ex:
+            log.exception(ex)
+            raise ImportError()
+
+
+sys.path_hooks.append(ScriptImporter)
