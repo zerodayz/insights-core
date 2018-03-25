@@ -21,7 +21,8 @@ class Script(object):
     Also executes the script with an environment set up for the dependencies.
     """
 
-    def __init__(self, path, data, requires, optional, interpreter):
+    def __init__(self, name, path, data, requires, optional, interpreter):
+        self.name = name
         self.path = path
         self.data = data
         self.requires = requires
@@ -29,8 +30,8 @@ class Script(object):
         self.interpreter = interpreter
 
         self.args = shlex.split(interpreter)
-        self.name, _, _ = path.replace("/", ".").rpartition(".")
-        self.log = logging.getLogger(self.name)
+        self.full_name, _, _ = path.replace("/", ".").rpartition(".")
+        self.log = logging.getLogger(self.full_name)
 
     @contextmanager
     def create_environment(self, broker):
@@ -145,22 +146,24 @@ def parse(path, data):
         raise Exception("Invalid script. Missing interpreter line: %s" % path)
 
     interpreter = lines[0].strip("#! ")
-    lines = lines[1:]
 
     is_rule = False
+    name = None
     requires = []
     optional = []
 
-    keywords = ("# requires", "# optional", "# type")
+    keywords = ("# requires:", "# optional:", "# type:", "# name:")
 
     for line in lines:
         line = line.strip()
-        if not line:
-            continue
-        elif line.startswith(keywords):
+        if line.startswith(keywords):
             keyword, args = [l.strip() for l in line.split(":")]
             if not is_rule and "type" in keyword and args == "rule":
                 is_rule = True
+                continue
+
+            if "name" in keyword:
+                name = args
                 continue
 
             args = parse_args(args)
@@ -173,7 +176,7 @@ def parse(path, data):
                 optional.extend(args)
 
     if is_rule:
-        return Script(path, data, requires, optional, interpreter)
+        return Script(name, path, data, requires, optional, interpreter)
 
 
 class ScriptType(dr.TypeSet):
@@ -204,7 +207,7 @@ def load(path, data, mod_name=None):
 
     mod_path, _ = os.path.splitext(path)
     mod_name = mod_name or mod_path.replace("/", ".")
-    comp_name = "report"
+    comp_name = script.name or "report"
 
     if mod_name not in sys.modules:
         mod = imp.new_module(mod_name)
@@ -232,6 +235,7 @@ def load(path, data, mod_name=None):
     driver.__module__ = mod_name
     driver.__name__ = comp_name
     driver.__qualname__ = comp_name
+    driver.__script__ = script
 
     dec = ScriptType.script_type(*script.requires, optional=script.optional)
     driver = dec(driver)

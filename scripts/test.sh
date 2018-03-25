@@ -3,6 +3,12 @@
 # maybe have type: datasource as well
 # type: rule
 
+# you can give the rule a name that must be a valid python identifier.
+# if you do, the function representing this rule will have this name.
+# if you don't specify a name, the function is given the default name
+# of "report"
+# name: my_test
+
 # requires: hosts
 # requires: ethtool
 
