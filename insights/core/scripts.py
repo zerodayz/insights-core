@@ -357,6 +357,8 @@ class ScriptLoader(object):
 
         try:
             mod = load(self.filename, self.get_source(), fullname)
+            if mod is None:
+                raise ImportError("Couldn't load %s" % fullname)
             mod.__loader__ = self
             mod.__file__ = self.filename
             mod.__package__ = fullname.rpartition(".")[0]
