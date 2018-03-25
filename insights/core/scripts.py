@@ -288,8 +288,7 @@ class ScriptImporter(object):
         if self.path is None or not os.path.isdir(self.path):
             return
 
-        yielded = set()
-        import inspect
+        yielded = {}
         try:
             filenames = os.listdir(self.path)
         except OSError:
@@ -298,32 +297,16 @@ class ScriptImporter(object):
         filenames.sort()  # handle packages before same-named modules
 
         for fn in filenames:
-            modname = inspect.getmodulename(fn)
-            if not modname and not fn.endswith(self.ext):
-                modname = fn.rpartition(".")[0]
-
+            modname, _ = os.path.splitext(fn)
             if modname == '__init__' or modname in yielded:
                 continue
 
             path = os.path.join(self.path, fn)
             ispkg = False
 
-            if not modname and os.path.isdir(path) and '.' not in fn:
+            if os.path.isdir(path):
+                ispkg = True
                 modname = fn
-                try:
-                    dircontents = os.listdir(path)
-                except OSError:
-                    # ignore unreadable directories like import does
-                    dircontents = []
-                for fn in dircontents:
-                    subname = inspect.getmodulename(fn)
-                    if not subname and not fn.endswith(self.ext):
-                        subname = fn.partition(".")[0]
-                    if subname == '__init__':
-                        ispkg = True
-                        break
-                else:
-                    continue    # not a package
 
             if modname and '.' not in modname:
                 yielded[modname] = 1

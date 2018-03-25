@@ -9,6 +9,7 @@ from .core import AttributeDict  # noqa: F401
 from .core import Syslog  # noqa: F401
 from .core.archives import extract  # noqa: F401
 from .core import dr  # noqa: F401
+from .core import scripts  # noqa: F401
 from .core.context import HostContext, HostArchiveContext  # noqa: F401
 from .core.dr import SkipComponent  # noqa: F401
 from .core.hydration import create_context
