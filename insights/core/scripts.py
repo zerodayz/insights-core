@@ -142,7 +142,7 @@ def parse(path, data):
         Script object
     """
     lines = data.splitlines()
-    if not lines or not lines[0].startswith("#"):
+    if not lines or not lines[0].startswith("#!"):
         raise Exception("Invalid script. Missing interpreter line: %s" % path)
 
     interpreter = lines[0].strip("#! ")
@@ -191,8 +191,10 @@ def load(path, data, mod_name=None):
     """
     Creates a module and component that integrates insights with an arbitrary
     script so it can participate as a rule. The module name is based on the
-    dirname of path. The component's name is based on the basename of path with
-    the extention stripped. Scripts should write rule response JSON to stdout.
+    path of the script. The component's name is either a name given inside the
+    script via the # name: directive or "report" if none is specified. Scripts
+    should write JSON or key: value lines to stdout. An error_key: value element
+    is required.
 
     Args:
         path (str): path to the script file
