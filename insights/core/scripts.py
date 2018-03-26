@@ -46,7 +46,7 @@ class Script(object):
 
         def locate(name, provider):
             if not provider:
-                env[name] = None
+                env[name] = ""
                 return
 
             if isinstance(provider, list):
