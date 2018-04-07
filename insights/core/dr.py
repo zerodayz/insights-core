@@ -29,6 +29,8 @@ MODULE_NAMES = {}
 BASE_MODULE_NAMES = {}
 
 TYPE_OBSERVERS = defaultdict(set)
+FINISHED_LOADING_CALLBACKS = set()
+FINISHED_LOADING = False
 
 ALIASES_BY_COMPONENT = {}
 ALIASES = {}
@@ -45,6 +47,18 @@ IGNORE = defaultdict(set)
 ENABLED = defaultdict(lambda: True)
 
 ANY_TYPE = object()
+
+
+def add_finished_loading_callback(c):
+    FINISHED_LOADING_CALLBACKS.add(c)
+
+
+def fire_finished_loading():
+    for c in FINISHED_LOADING_CALLBACKS:
+        try:
+            c()
+        except Exception as ex:
+            log.exception(ex)
 
 
 def set_enabled(component, enabled=True):
@@ -291,6 +305,9 @@ def _import(path, continue_on_error):
 
 
 def load_components(path, include=".*", exclude="test", continue_on_error=True):
+    if FINISHED_LOADING:
+        raise Exception("Loading has been finalized. Can't load more components.")
+
     num_loaded = 0
     if path.endswith(".py"):
         path, _ = os.path.splitext(path)
@@ -672,6 +689,11 @@ def run(components=COMPONENTS[GROUPS.single], broker=None):
     Executes components in an order that satisfies their dependency
     relationships.
     """
+    global FINISHED_LOADING
+    if not FINISHED_LOADING:
+        FINISHED_LOADING = True
+        fire_finished_loading()
+
     broker = broker or Broker()
 
     for component in run_order(components):
