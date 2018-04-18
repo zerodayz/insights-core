@@ -132,8 +132,11 @@ class ExecutionContext(object):
         """
         return call(cmd, timeout=timeout or self.timeout, stderr=STDOUT, keep_rc=keep_rc)
 
-    def shell_out(self, cmd, split=True, timeout=None, keep_rc=False):
+    def shell_out(self, cmd, split=True, timeout=None, keep_rc=False, filters=None):
         rc = None
+        if filters:
+            filters = "\n".join(filters)
+            cmd = "{0} | grep -F '{1}'".format(cmd, filters)
         raw = self.check_output(cmd, timeout=timeout, keep_rc=keep_rc)
         if keep_rc:
             rc, output = raw
@@ -144,6 +147,25 @@ class ExecutionContext(object):
             output = output.splitlines()
 
         return (rc, output) if keep_rc else output
+
+    def exists(self, path):
+        return os.path.exists(path)
+
+    def access(self, path, mode):
+        return os.access(path, mode)
+
+    def read(self, path):
+        with open(path, 'rb') as f:
+            return f.read()
+
+    def readlines(self, path, filters=None):
+        if filters:
+            filters = "\n".join(filters)
+            cmd = "/bin/grep -F '{0}' {1}".format(filters, path)
+            return self.shell_out(cmd)
+
+        with open(path, "U") as f:
+            return [l.rstrip("\n") for l in f]
 
     def locate_path(self, path):
         return os.path.expandvars(path)

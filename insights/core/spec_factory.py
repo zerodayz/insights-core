@@ -12,7 +12,6 @@ from insights.core.filters import get_filters
 from insights.core.context import ExecutionContext, FSRoots, HostContext
 from insights.core.plugins import datasource, ContentException, is_datasource
 from insights.core.serde import deserializer, serializer
-from insights.util import subproc
 
 log = logging.getLogger(__name__)
 
@@ -91,10 +90,11 @@ class ContentProvider(object):
 
 
 class FileProvider(ContentProvider):
-    def __init__(self, relative_path, root="/", ds=None):
+    def __init__(self, relative_path, ctx, root="/", ds=None):
         super(FileProvider, self).__init__()
         self.root = root
         self.relative_path = relative_path.lstrip("/")
+        self.ctx = ctx
 
         self.path = os.path.join(root, self.relative_path)
         self.file_name = os.path.basename(self.path)
@@ -106,10 +106,10 @@ class FileProvider(ContentProvider):
         if not blacklist.allow_file("/" + self.relative_path):
             raise dr.SkipComponent()
 
-        if not os.path.exists(self.path):
+        if not self.ctx.exists(self.path):
             raise ContentException("%s does not exist." % self.path)
 
-        if not os.access(self.path, os.R_OK):
+        if not self.ctx.access(self.path, os.R_OK):
             raise ContentException("Cannot access %s" % self.path)
 
     def __repr__(self):
@@ -123,8 +123,7 @@ class RawFileProvider(FileProvider):
     """
 
     def load(self):
-        with open(self.path, 'rb') as f:
-            return f.read()
+        return self.ctx.read(self.path)
 
 
 class TextFileProvider(FileProvider):
@@ -143,20 +142,9 @@ class TextFileProvider(FileProvider):
         return True
 
     def load(self):
+        filters = get_filters(self.ds) if self.ds else None
+        results = self.ctx.readlines(self.path, filters)
 
-        filters = False
-        if self.ds:
-            filters = "\n".join(get_filters(self.ds))
-        if filters:
-            cmd = "/bin/grep -F '{0}' {1}".format(filters, self.path)
-            rc, out = subproc.call(cmd.encode("utf-8"), shell=False, keep_rc=True)
-            if rc == 0 and out != '':
-                results = out.splitlines()
-            else:
-                return []
-        else:
-            with open(self.path, "rU") as f:
-                results = [l.rstrip("\n") for l in f]
         if not self.validate_lines(results):
             first = results[0] if results else "<no content>"
             raise ContentException(self.relative_path + ": " + first)
@@ -330,7 +318,7 @@ def simple_file(path, context=None, kind=TextFileProvider):
     @datasource(context or FSRoots, raw=(kind is RawFileProvider))
     def inner(broker):
         ctx = _get_context(context, FSRoots, broker)
-        return kind(ctx.locate_path(path), root=ctx.root, ds=inner)
+        return kind(ctx.locate_path(path), ctx, root=ctx.root, ds=inner)
     return inner
 
 
@@ -363,7 +351,7 @@ def glob_file(patterns, ignore=None, context=None, kind=TextFileProvider):
                 if ignore and re.search(ignore, path):
                     continue
                 try:
-                    results.append(kind(path[len(root):], root=root, ds=inner))
+                    results.append(kind(path[len(root):], ctx, root=root, ds=inner))
                 except:
                     log.debug(traceback.format_exc())
         if results:
@@ -394,7 +382,7 @@ def first_file(files, context=None, kind=TextFileProvider):
         root = ctx.root
         for f in files:
             try:
-                return kind(ctx.locate_path(f), root=root, ds=inner)
+                return kind(ctx.locate_path(f), ctx, root=root, ds=inner)
             except:
                 pass
         raise ContentException("None of [%s] found." % ', '.join(files))
@@ -459,10 +447,8 @@ def simple_command(cmd, context=HostContext, split=True, keep_rc=False, timeout=
         ctx = broker[context]
         rc = None
         if split:
-            filters = "\n".join(get_filters(inner))
-        if filters:
-            command = "{0} | grep -F '{1}'".format(cmd, filters)
-            raw = ctx.shell_out(command, split=split, keep_rc=keep_rc, timeout=timeout)
+            filters = get_filters(inner)
+            raw = ctx.shell_out(cmd, split=split, keep_rc=keep_rc, timeout=timeout, filters=filters)
         else:
             raw = ctx.shell_out(cmd, split=split, keep_rc=keep_rc, timeout=timeout)
 
@@ -517,10 +503,8 @@ def foreach_execute(provider, cmd, context=HostContext, split=True, keep_rc=Fals
                 rc = None
 
                 if split:
-                    filters = "\n".join(get_filters(inner))
-                if filters:
-                    command = "{0} | grep -F '{1}'".format(the_cmd, filters)
-                    raw = ctx.shell_out(command, split=split, keep_rc=keep_rc, timeout=timeout)
+                    filters = get_filters(inner)
+                    raw = ctx.shell_out(the_cmd, split=split, keep_rc=keep_rc, timeout=timeout, filters=filters)
                 else:
                     raw = ctx.shell_out(the_cmd, split=split, keep_rc=keep_rc, timeout=timeout)
                 if keep_rc:
@@ -570,7 +554,7 @@ def foreach_collect(provider, path, ignore=None, context=HostContext, kind=TextF
                 if ignore and re.search(ignore, p):
                     continue
                 try:
-                    result.append(kind(p[len(root):], root=root, ds=inner))
+                    result.append(kind(p[len(root):], ctx, root=root, ds=inner))
                 except:
                     log.debug(traceback.format_exc())
         if result:

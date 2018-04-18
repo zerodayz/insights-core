@@ -38,7 +38,7 @@ def test_spec_factory():
     assert not any(l.endswith("\n") for l in broker[Stuff.smpl_file].content)
 
 
-def test_line_terminators():
+def test_filters():
     add_filter(Stuff.smpl_file, "def test")
     hn = HostContext()
     broker = dr.Broker()
