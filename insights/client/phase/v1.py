@@ -86,7 +86,7 @@ def pre_update():
         if not config['register']:
             sys.exit(constants.sig_kill_ok)
 
-    if config['container_mode']:
+    if config['analyze_container']:
         logger.debug('Not scanning host.')
         logger.debug('Scanning image ID, tar file, or mountpoint.')
 
@@ -154,7 +154,7 @@ def post_update():
     # check registration before doing any uploads
     # only do this if we are not running in container mode
     # Ignore if in offline mode
-    if not config["container_mode"] and not config["analyze_container"]:
+    if not config["analyze_container"]:
         if not config['register'] and not config['offline']:
             msg, is_registered = client._is_client_registered()
             if not is_registered:
