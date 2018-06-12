@@ -16,6 +16,7 @@ from ..contrib.soscleaner import SOSCleaner
 from .utilities import _expand_paths
 from .constants import InsightsConstants as constants
 from .insights_spec import InsightsFile, InsightsCommand
+from .config import InsightsConfig
 
 APP_NAME = constants.app_name
 logger = logging.getLogger(__name__)
@@ -32,17 +33,20 @@ class DataCollector(object):
     Run commands and collect files
     '''
 
-    def __init__(self, config, archive_=None, mountpoint=None):
+    def __init__(self, config, upload_conf, rm_conf, branch_info=None, archive_=None, mountpoint=None):
         self.config = config
+        self.upload_conf = upload_conf
+        self.rm_conf = rm_conf
+        self.branch_info = branch_info
         self.archive = archive_ if archive_ else archive.InsightsArchive()
         self.mountpoint = '/'
         if mountpoint:
             self.mountpoint = mountpoint
 
-    def _write_branch_info(self, branch_info):
+    def _write_branch_info(self):
         logger.debug("Writing branch information to archive...")
         self.archive.add_metadata_to_archive(
-            json.dumps(branch_info), '/branch_info')
+            json.dumps(self.branch_info), '/branch_info')
 
     def _run_pre_command(self, pre_cmd):
         '''
@@ -155,23 +159,23 @@ class DataCollector(object):
                     else:
                         cmd_specs = self._parse_command_spec(spec, conf['pre_commands'])
                         for s in cmd_specs:
-                            cmd_spec = InsightsCommand(self.config, s, exclude, self.mountpoint, self.target_name)
+                            cmd_spec = InsightsCommand(s, exclude, self.mountpoint, self.target_name)
                             self.archive.add_to_archive(cmd_spec)
         else:
             logger.debug('Spec metadata type "%s" not found in spec.', metadata_spec)
         logger.debug('Spec metadata collection finished.')
 
-    def run_collection(self, conf, rm_conf, branch_info):
+    def run_collection(self, output=True):
         '''
         Run specs and collect all the data
         '''
-        if rm_conf is None:
-            rm_conf = {}
+        if self.rm_conf is None:
+            self.rm_conf = {}
         logger.debug('Beginning to run collection spec...')
         exclude = None
-        if rm_conf:
+        if self.rm_conf:
             try:
-                exclude = rm_conf['patterns']
+                exclude = self.rm_conf['patterns']
             except LookupError:
                 logger.debug('Could not parse remove.conf. Ignoring...')
 
@@ -179,49 +183,58 @@ class DataCollector(object):
             logger.debug('Running specific specs %s', self.config['run_specific_specs'])
             for specific_spec in self.config['run_specific_specs'].split(','):
                 logger.debug('Running specific spec %s', specific_spec)
-                self.run_specific_specs(specific_spec, conf, rm_conf, exclude, branch_info)
+                self.run_specific_specs(specific_spec, conf, self.rm_conf, exclude, branch_info)
                 logger.debug('Finished running specific spec %s', specific_spec)
             return
 
-        for c in conf['commands']:
-            if c['command'] in rm_conf.get('commands', []):
+        for c in self.upload_conf['commands']:
+            if c['command'] in self.rm_conf.get('commands', []):
                 logger.warn("WARNING: Skipping command %s", c['command'])
             elif self.mountpoint == "/" or c.get("image"):
-                cmd_specs = self._parse_command_spec(c, conf['pre_commands'])
+                cmd_specs = self._parse_command_spec(c, self.upload_conf['pre_commands'])
                 for s in cmd_specs:
                     cmd_spec = InsightsCommand(self.config, s, exclude, self.mountpoint)
-                    self.archive.add_to_archive(cmd_spec)
-        for f in conf['files']:
-            if f['file'] in rm_conf.get('files', []):
+                    if output:
+                        self.archive.add_to_archive(cmd_spec)
+                    else:
+                        print(cmd_spec.command)
+        for f in self.upload_conf['files']:
+            if f['file'] in self.rm_conf.get('files', []):
                 logger.warn("WARNING: Skipping file %s", f['file'])
             else:
                 file_specs = self._parse_file_spec(f)
                 for s in file_specs:
                     file_spec = InsightsFile(s, exclude, self.mountpoint)
-                    self.archive.add_to_archive(file_spec)
-        if 'globs' in conf:
-            for g in conf['globs']:
+                    if output:
+                        self.archive.add_to_archive(file_spec)
+                    else:
+                        print(file_spec.real_path)
+        if 'globs' in self.upload_conf:
+            for g in self.upload_conf['globs']:
                 glob_specs = self._parse_glob_spec(g)
                 for g in glob_specs:
-                    if g['file'] in rm_conf.get('files', []):
+                    if g['file'] in self.rm_conf.get('files', []):
                         logger.warn("WARNING: Skipping file %s", g)
                     else:
                         glob_spec = InsightsFile(g, exclude, self.mountpoint)
-                        self.archive.add_to_archive(glob_spec)
+                        if output:
+                            self.archive.add_to_archive(glob_spec)
+                        else:
+                            print(glob_spec.real_path)
         logger.debug('Spec collection finished.')
 
         # collect metadata
         logger.debug('Collecting metadata...')
-        self._write_branch_info(branch_info)
+        self._write_branch_info()
         logger.debug('Metadata collection finished.')
 
-    def done(self, conf, rm_conf):
+    def done(self, conf):
         """
         Do finalization stuff
         """
         if self.config["obfuscate"]:
             cleaner = SOSCleaner(quiet=True)
-            clean_opts = CleanOptions(self.config, self.archive.tmp_dir, rm_conf)
+            clean_opts = CleanOptions(self.archive.tmp_dir, self.rm_conf)
             fresh = cleaner.clean_report(clean_opts, self.archive.archive_dir)
             if clean_opts.keyword_file is not None:
                 os.remove(clean_opts.keyword_file.name)
@@ -233,7 +246,7 @@ class CleanOptions(object):
     """
     Options for soscleaner
     """
-    def __init__(self, config, tmp_dir, rm_conf):
+    def __init__(self, tmp_dir, rm_conf):
         self.report_dir = tmp_dir
         self.domains = []
         self.files = []
@@ -257,3 +270,13 @@ class CleanOptions(object):
             self.hostname_path = "insights_commands/hostname"
         else:
             self.hostname_path = None
+
+if __name__ == '__main__':
+    from .config import InsightsConfig
+    from .collection_rules import InsightsUploadConf
+    from .connection import InsightsConnection
+    conf = InsightsConfig(auto_config=False, gpg=False)
+    conn = InsightsConnection(conf)
+    ul_conf, rm_conf = InsightsUploadConf(conf, conn).get_conf(True)
+    dc = DataCollector(conf, ul_conf, rm_conf)
+    dc.run_collection(output=False)
