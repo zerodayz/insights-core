@@ -1,6 +1,10 @@
 from __future__ import print_function
+import json
 import os
 import pkgutil
+import signal
+import sys
+import time
 from .core import Scannable, LogFileOutput, Parser, IniConfigFile  # noqa: F401
 from .core import FileListing, LegacyItemAccess, SysconfigOptions  # noqa: F401
 from .core import YAMLParser, JSONParser, XMLParser, CommandParser  # noqa: F401
@@ -16,6 +20,7 @@ from .core.plugins import combiner, fact, metadata, parser, rule  # noqa: F401
 from .core.plugins import datasource, condition, incident  # noqa: F401
 from .core.plugins import make_response, make_metadata, make_fingerprint  # noqa: F401
 from .core.filters import add_filter, apply_filters, get_filters  # noqa: F401
+from .core.streams import stream, Stream  # noqa: F401
 from .formats import get_formatter
 from .parsers import get_active_lines  # noqa: F401
 from .util import defaults  # noqa: F401
@@ -103,11 +108,43 @@ def _load_context(path):
     return dr.get_component(path)
 
 
+def apply_configs(configs):
+    """
+    Configures components based on manifest options. They can be enabled or
+    disabled, have timeouts set if applicable, and have metadata customized.
+    """
+    delegate_keys = sorted(dr.DELEGATES, key=dr.get_name)
+    for comp_cfg in configs:
+        name = comp_cfg["name"]
+        for c in delegate_keys:
+            delegate = dr.DELEGATES[c]
+            cname = dr.get_name(c)
+            if cname.startswith(name):
+                dr.ENABLED[c] = comp_cfg.get("enabled", True)
+                delegate.metadata.update(comp_cfg.get("metadata", {}))
+                for k, v in comp_cfg.items():
+                    if hasattr(c, k):
+                        setattr(c, k, v)
+            if cname == name:
+                break
+
+
+def parse_plugins(plugins):
+    results = []
+    if plugins:
+        for path in plugins.split(","):
+            path = path.strip()
+            if path.endswith(".py"):
+                path, _ = os.path.splitext(path)
+            path = path.rstrip("/").replace("/", ".")
+            results.append(path)
+    return results
+
+
 def run(component=None, root=None, print_summary=False,
         context=None, use_pandas=False,
-        print_component=None):
+        print_component=None, process_streams=False):
 
-    from .core import dr
     dr.load_components("insights.specs.default")
     dr.load_components("insights.specs.insights_archive")
     dr.load_components("insights.specs.sos_archive")
@@ -120,10 +157,12 @@ def run(component=None, root=None, print_summary=False,
         import logging
         p = argparse.ArgumentParser(add_help=False)
         p.add_argument("archive", nargs="?", help="Archive or directory to analyze.")
+        p.add_argument("-c", "--config", default="", help="Component configuration.")
         p.add_argument("-p", "--plugins", default="", help="Comma-separated list without spaces of package(s) or module(s) containing plugins.")
         p.add_argument("-v", "--verbose", help="Verbose output.", action="store_true")
         p.add_argument("-f", "--format", help="Output format.", default="insights.formats.text")
         p.add_argument("-D", "--debug", help="Verbose debug output.", action="store_true")
+        p.add_argument("-s", "--streams", help="Stream Processing.", action="store_true")
         p.add_argument("--context", help="Execution Context. Defaults to HostContext if an archive isn't passed.")
         p.add_argument("--pandas", action="store_true", help="Use pandas dataframes with cluster rules.")
 
@@ -147,22 +186,19 @@ def run(component=None, root=None, print_summary=False,
         logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO if args.verbose else logging.ERROR)
         context = _load_context(args.context) or context
         use_pandas = args.pandas or use_pandas
+        process_streams = args.streams
 
         root = args.archive or root
         if root:
             root = os.path.realpath(root)
 
-        plugins = []
-        if args.plugins:
-            for path in args.plugins.split(","):
-                path = path.strip()
-                if path.endswith(".py"):
-                    path, _ = os.path.splitext(path)
-                path = path.rstrip("/").replace("/", ".")
-                plugins.append(path)
-
+        plugins = parse_plugins(args.plugins)
         for p in plugins:
             dr.load_components(p)
+
+        if args.config:
+            with open(args.config) as f:
+                apply_configs(json.load(f))
 
         if component is None:
             component = []
@@ -177,6 +213,8 @@ def run(component=None, root=None, print_summary=False,
         graph = {}
         for c in component:
             graph.update(dr.get_dependency_graph(c))
+    elif process_streams:
+        graph = dr.COMPONENTS["stream"]
     else:
         graph = dr.COMPONENTS[dr.GROUPS.single]
 
@@ -192,7 +230,24 @@ def run(component=None, root=None, print_summary=False,
     else:
         broker = _run(broker, graph, root, context=context, use_pandas=use_pandas)
 
-    return broker
+    if process_streams:
+        streams = broker.get_by_type(stream).values()
+        if streams:
+
+            def handler(signum, frame):
+                sys.exit(0)
+
+            signal.signal(signal.SIGINT, handler)
+            signal.signal(signal.SIGTERM, handler)
+
+            for s in streams:
+                s.start()
+
+            # hang out while anything is alive so we can catch signals
+            while any(s.is_alive() for s in streams):
+                time.sleep(.5)
+    else:
+        return broker
 
 
 def main():
