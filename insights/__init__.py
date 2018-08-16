@@ -143,7 +143,7 @@ def parse_plugins(plugins):
 
 def run(component=None, root=None, print_summary=False,
         context=None, use_pandas=False,
-        print_component=None, process_streams=False):
+        print_component=None, process_streams=False, broker=None):
 
     dr.load_components("insights.specs.default")
     dr.load_components("insights.specs.insights_archive")
@@ -218,7 +218,7 @@ def run(component=None, root=None, print_summary=False,
     else:
         graph = dr.COMPONENTS[dr.GROUPS.single]
 
-    broker = dr.Broker()
+    broker = broker or dr.Broker()
 
     if formatter:
         formatter.preprocess(broker)
