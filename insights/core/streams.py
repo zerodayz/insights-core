@@ -67,8 +67,10 @@ class Stream(threading.Thread):
                 if not self.queue:
                     return
                 data = self.queue.get(2)
-                self.update(*data)
+                res = self.update(*data)
                 self.queue.task_done()
+                if res is not None:
+                    self.emit(res)
             except Empty:
                 pass
             except Exception as ex:
