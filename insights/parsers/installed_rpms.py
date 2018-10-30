@@ -595,6 +595,9 @@ class InstalledRpm(object):
     def __le__(self, other):
         return isinstance(other, InstalledRpm) and not other.__lt__(self)
 
+    def __hash__(self):
+        return hash(self.nevra())
+
 
 # re-exports
 from_package = InstalledRpm.from_package
