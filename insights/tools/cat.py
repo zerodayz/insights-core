@@ -24,6 +24,7 @@ import argparse
 import logging
 import os
 import sys
+import uuid
 import yaml
 
 from contextlib import contextmanager
@@ -40,6 +41,7 @@ def parse_args():
     p.add_argument("-c", "--config", help="Configure components.")
     p.add_argument("-p", "--plugins", default="", help="Comma-separated list without spaces of package(s) or module(s) containing plugins.")
     p.add_argument("-q", "--quiet", action="store_true", help="Only show commands or paths.")
+    p.add_argument("-m", "--machine", action="store_true", help="Only show commands or paths.")
     p.add_argument("-D", "--debug", action="store_true", help="Show debug level information.")
     p.add_argument("spec", nargs=1, help="Spec to dump.")
     p.add_argument("archive", nargs="?", help="Archive or directory to analyze.")
@@ -103,50 +105,81 @@ def create_broker(root=None):
                 yield from_dir(ex.tmp_dir)
 
 
-def dump_spec(value, quiet=False):
-    if not value:
-        return
+class Dumper(object):
+    def __init__(self, quiet=False, machine=False):
+        self.quiet = quiet
+        self.machine = machine
 
-    value = value if isinstance(value, list) else [value]
-    for v in value:
-        print(C.Fore.BLUE + str(v) + C.Style.RESET_ALL, file=sys.stderr)
-        if not quiet:
-            if isinstance(v, ContentProvider):
-                for d in v.stream():
-                    print(d)
+    def dump_human(self, value):
+        value = value if isinstance(value, list) else [value]
+        for v in value:
+            print(C.Fore.BLUE + str(v) + C.Style.RESET_ALL, file=sys.stderr)
+            if not self.quiet:
+                if isinstance(v, ContentProvider):
+                    for d in v.stream():
+                        print(d)
 
+    def dump_one(self, value):
+        print("One")
+        if isinstance(value, ContentProvider):
+            for d in value.stream():
+                print(d)
 
-def dump_error(spec, broker):
-    if spec in broker.exceptions:
-        for ex in broker.exceptions[spec]:
-            print(broker.tracebacks[ex], file=sys.stderr)
+    def dump_many(self, value):
+        uid = uuid.uuid4()
+        print("Many")
+        for v in value:
+            print(str(uid))
+            for d in v.stream():
+                print(d)
 
-    if spec in broker.missing_requirements:
-        missing = broker.missing_requirements[spec]
-        required = missing[0]
-        at_least_one = missing[1]
+    def dump_machine(self, value):
+        if isinstance(value, list):
+            self.dump_many(value)
+        else:
+            self.dump_one(value)
 
-        buf = sys.stderr
+    def dump_spec(self, value):
+        if not value:
+            return
 
-        print("Missing Dependencies:", file=buf)
-        if required:
-            print("    Requires:", file=buf)
-            for d in required:
-                print("        %s" % dr.get_name(d), file=buf)
-        if at_least_one:
-            for alo in at_least_one:
-                print("    At Least One Of:", file=buf)
-                for d in alo:
+        if self.machine:
+            self.dump_machine(value)
+        else:
+            self.dump_human(value)
+
+    def dump_error(self, spec, broker):
+        if spec in broker.exceptions:
+            for ex in broker.exceptions[spec]:
+                print(broker.tracebacks[ex], file=sys.stderr)
+
+        if spec in broker.missing_requirements:
+            missing = broker.missing_requirements[spec]
+            required = missing[0]
+            at_least_one = missing[1]
+
+            buf = sys.stderr
+
+            print("Missing Dependencies:", file=buf)
+            if required:
+                print("    Requires:", file=buf)
+                for d in required:
                     print("        %s" % dr.get_name(d), file=buf)
+            if at_least_one:
+                for alo in at_least_one:
+                    print("    At Least One Of:", file=buf)
+                    for d in alo:
+                        print("        %s" % dr.get_name(d), file=buf)
 
 
-def run(spec, archive=None, quiet=False):
+def run(spec, archive, dumper):
     with create_broker(archive) as broker:
         value = dr.run(spec, broker=broker).get(spec)
         if value:
-            dump_spec(value, quiet=quiet)
+            dumper.dump_spec(value)
         else:
-            dump_error(spec, broker)
+            dumper.dump_error(spec, broker)
+            sys.exit(1)
 
 
 def main():
@@ -159,7 +192,8 @@ def main():
     if not spec:
         print("Spec not found: %s" % args.spec[0], file=sys.stderr)
         sys.exit(1)
-    run(spec, archive=args.archive, quiet=args.quiet)
+    dumper = Dumper(quiet=args.quiet, machine=args.machine)
+    run(spec, args.archive, dumper)
 
 
 if __name__ == "__main__":

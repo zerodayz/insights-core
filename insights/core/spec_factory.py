@@ -156,6 +156,29 @@ class FileProvider(ContentProvider):
         return '%s("%r")' % (self.__class__.__name__, self.path)
 
 
+class CatDataProvider(FileProvider):
+    def __init__(self, relative_path, offset, num_lines=None, root="/", ds=None, ctx=None):
+        super(CatDataProvider, self).__init__(relative_path, root=root, ds=ds, ctx=ctx)
+        self.offset = offset
+        self.num_lines = num_lines
+
+    def load(self):
+        self.loaded = True
+        with open(self.path, "U") as f:
+            f.seek(self.offset)
+            if self.num_lines:
+                return [f.readline().rstrip("\n") for _ in range(0, self.num_lines)]
+            return [l.rstrip("\n") for l in f]
+
+    def _stream(self):
+        with open(self.path, "U") as f:
+            f.seek(self.offset)
+            if not self.num_lines:
+                yield f
+            else:
+                yield (f.readline().rstrip("\n") for _ in range(0, self.num_lines))
+
+
 class RawFileProvider(FileProvider):
     """
     Class used in datasources that returns the contents of a file a single
@@ -836,6 +859,47 @@ class first_of(object):
         for c in self.deps:
             if c in broker:
                 return broker[c]
+
+
+class from_cat(object):
+    def __init__(self, path, context=None, deps=[], **kwargs):
+        self.path = path
+        self.context = context or FSRoots
+        self.kind = CatDataProvider
+        self.raw = False
+        self.__name__ = self.__class__.__name__
+        datasource(self.context, *deps, raw=self.raw, **kwargs)(self)
+
+    def get_cat_providers(self, ctx):
+        res = ctx.locate_path(self.path)
+        path = os.path.join(ctx.root, res)
+        with open(path, "U") as f:
+            type_ = f.readline().rstrip("\n")
+            if type_ == "One":
+                return self.kind(res, f.tell(), root=ctx.root, ds=self, ctx=ctx)
+            uid = f.readline().rstrip("\n")
+            results = []
+            num_lines = 0
+            offset = f.tell()
+            line = f.readline()
+            while line:
+                line = line.rstrip("\n")
+                if line == uid:
+                    cat = self.kind(res, offset, num_lines=num_lines, root=ctx.root, ds=self, ctx=ctx)
+                    results.append(cat)
+                    offset = f.tell()
+                    num_lines = 0
+                else:
+                    num_lines += 1
+                line = f.readline()
+            if num_lines:
+                cat = self.kind(res, offset, num_lines=num_lines, root=ctx.root, ds=self, ctx=ctx)
+                results.append(cat)
+        return results
+
+    def __call__(self, broker):
+        ctx = _get_context(self.context, broker)
+        return self.get_cat_providers(ctx)
 
 
 @serializer(CommandOutputProvider)
