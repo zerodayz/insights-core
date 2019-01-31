@@ -284,7 +284,7 @@ def run(component=None, root=None, print_summary=False,
 def main():
     if "" not in sys.path:
         sys.path.insert(0, "")
-    run(print_summary=True)
+    run(print_summary=True, print_component=True)
 
 
 if __name__ == "__main__":

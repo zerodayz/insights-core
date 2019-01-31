@@ -10,17 +10,16 @@ import shutil
 import six
 import atexit
 
+from .. import collect
 from .utilities import (generate_machine_id,
                         write_to_disk,
                         write_registered_file,
                         write_unregistered_file,
                         delete_registered_file,
                         delete_unregistered_file,
-                        determine_hostname)
-from .collection_rules import InsightsUploadConf
-from .data_collector import DataCollector
+                        determine_hostname,
+                        parse_rm_conf)
 from .connection import InsightsConnection
-from .archive import InsightsArchive
 from .support import registration_check
 from .constants import InsightsConstants as constants
 from .schedule import get_scheduler
@@ -202,15 +201,6 @@ def get_machine_id():
     return generate_machine_id()
 
 
-def update_rules(config, pconn):
-    if not pconn:
-        raise ValueError('ERROR: Cannot update rules in --offline mode. '
-                         'Disable auto_update in config file.')
-
-    pc = InsightsUploadConf(config, conn=pconn)
-    return pc.get_conf_update()
-
-
 def get_branch_info(config, pconn):
     """
     Get branch info for a system
@@ -235,7 +225,7 @@ def get_branch_info(config, pconn):
     return branch_info
 
 
-def collect(config, pconn):
+def do_collection(config, pconn):
     """
     All the heavy lifting done here
     """
@@ -276,13 +266,7 @@ def collect(config, pconn):
         target = constants.default_target
 
     branch_info = get_branch_info(config, pconn)
-    pc = InsightsUploadConf(config)
     tar_file = None
-
-    collection_rules = pc.get_conf_file()
-    rm_conf = pc.get_rm_conf()
-    if rm_conf:
-        logger.warn("WARNING: Excluding data from files")
 
     # defaults
     archive = None
@@ -329,11 +313,7 @@ def collect(config, pconn):
         # nothing found to analyze
         else:
             logger.error('Unexpected analysis target: %s', target['type'])
-            return False
-
-        archive = InsightsArchive(compressor=config.compressor,
-                                  target_name=target['name'])
-        atexit.register(_delete_archive_internal, config, archive)
+            return False     
 
         # determine the target type and begin collection
         # we infer "docker_image" SPEC analysis for certain types
@@ -343,12 +323,10 @@ def collect(config, pconn):
             target_type = target['type']
         logger.debug("Inferring target_type '%s' for SPEC collection", target_type)
         logger.debug("Inferred from '%s'", target['type'])
-        dc = DataCollector(config, archive, mountpoint=mp)
 
         logger.info('Starting to collect Insights data for %s', logging_name)
-        dc.run_collection(collection_rules, rm_conf, branch_info)
-
-        tar_file = dc.done(collection_rules, rm_conf)
+        tar_file = collect.collect(compress=True)
+        atexit.register(_delete_archive_internal, config, tar_file)
 
     finally:
         # called on loop iter end or unexpected exit
@@ -416,8 +394,7 @@ def _delete_archive_internal(config, archive):
     Delete archive and tmp dirs on unexpected exit.
     '''
     if not config.keep_archive:
-        archive.delete_tmp_dir()
-        archive.delete_archive_file()
+        os.remove(archive)
 
 
 def delete_archive(path, delete_parent_dir):

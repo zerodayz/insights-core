@@ -221,3 +221,24 @@ def modify_config_file(updates):
     cmd = cmd + constants.default_conf_file
     status = run_command_get_output(cmd)
     write_to_disk(constants.default_conf_file, content=status['output'])
+
+
+def parse_rm_conf(remove_file):
+    """
+    Get excluded files config from remove_file.
+    """
+    if not os.path.isfile(remove_file):
+        return None
+
+    # Convert config object into dict
+    parsedconfig = ConfigParser.RawConfigParser()
+    parsedconfig.read(remove_file)
+    rm_conf = {}
+
+    for item, value in parsedconfig.items('remove'):
+        if six.PY3:
+            rm_conf[item] = value.strip().encode('utf-8').decode('unicode-escape').split(',')
+        else:
+            rm_conf[item] = value.strip().decode('string-escape').split(',')
+
+    return rm_conf
