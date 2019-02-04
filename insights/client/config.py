@@ -12,31 +12,6 @@ from .constants import InsightsConstants as constants
 logger = logging.getLogger(__name__)
 
 DEFAULT_OPTS = {
-    'analyze_container': {
-        'default': False,
-        'opt': ['--analyze-container'],
-        'help': 'Treat the current filesystem as a container and upload to the /images endpoint.',
-        'action': 'store_true'
-    },
-    'analyze_image_id': {
-        'default': None,
-        'opt': ['--analyze-image-id'],
-        'help': 'Analyze a docker image with the specified ID.',
-        'action': 'store',
-        'metavar': 'ID'
-    },
-    'analyze_file': {
-        'default': None,
-        'opt': ['--analyze-file'],
-        'help': 'Analyze an archived filesystem at the specified path.',
-        'action': 'store'
-    },
-    'analyze_mountpoint': {
-        'default': None,
-        'opt': ['--analyze-mountpoint'],
-        'help': 'Analyze a filesystem at the specified mountpoint.',
-        'action': 'store'
-    },
     # MARKED FOR DELETION
     'api_url': {
         # non-CLI
@@ -284,20 +259,6 @@ DEFAULT_OPTS = {
     'upload_url': {
         # non-CLI
         'default': None
-    },
-    'use_atomic': {
-        'default': None,
-        'opt': ['--use-atomic'],
-        'help': argparse.SUPPRESS,
-        'action': 'store_true',
-        'group': 'debug'
-    },
-    'use_docker': {
-        'default': None,
-        'opt': ['--use-docker'],
-        'help': argparse.SUPPRESS,
-        'action': 'store_true',
-        'group': 'debug'
     },
     'username': {
         # non-CLI
@@ -555,15 +516,9 @@ class InsightsConfig(object):
         if self.obfuscate_hostname and not self.obfuscate:
             raise ValueError(
                 'Option `obfuscate_hostname` requires `obfuscate`')
-        if self.analyze_image_id is not None and len(self.analyze_image_id) < 12:
-            raise ValueError(
-                'Image/Container ID must be at least twelve characters long.')
         if self.enable_schedule and self.disable_schedule:
             raise ValueError(
                 'Conflicting options: --enable-schedule and --disable-schedule')
-        if self.analyze_container and (self.register or self.unregister):
-            raise ValueError('Registration not supported with '
-                             'image or container analysis.')
         if self.to_json and self.to_stdout:
             raise ValueError(
                 'Conflicting options: --to-stdout and --to-json')
@@ -577,11 +532,6 @@ class InsightsConfig(object):
         '''
         self.no_upload = self.no_upload or self.to_stdout or self.offline
         self.auto_update = self.auto_update and not self.offline
-        if (self.analyze_container or
-           self.analyze_file or
-           self.analyze_mountpoint or
-           self.analyze_image_id):
-            self.analyze_container = True
         self.to_json = ((self.to_json or self.analyze_container) and
                         not self.to_stdout)
         self.register = (self.register or self.reregister) and not self.offline
