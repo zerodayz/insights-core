@@ -17,7 +17,6 @@ from .utilities import (generate_machine_id,
                         delete_registered_file,
                         delete_unregistered_file,
                         determine_hostname)
-from .collection_rules import InsightsUploadConf
 from .data_collector import DataCollector
 from .connection import InsightsConnection
 from .archive import InsightsArchive
@@ -276,13 +275,7 @@ def collect(config, pconn):
         target = constants.default_target
 
     branch_info = get_branch_info(config, pconn)
-    pc = InsightsUploadConf(config)
     tar_file = None
-
-    collection_rules = pc.get_conf_file()
-    rm_conf = pc.get_rm_conf()
-    if rm_conf:
-        logger.warn("WARNING: Excluding data from files")
 
     # defaults
     archive = None
@@ -346,9 +339,8 @@ def collect(config, pconn):
         dc = DataCollector(config, archive, mountpoint=mp)
 
         logger.info('Starting to collect Insights data for %s', logging_name)
-        dc.run_collection(collection_rules, rm_conf, branch_info)
-
-        tar_file = dc.done(collection_rules, rm_conf)
+        dc.run_collection(branch_info)
+        tar_file = dc.done()
 
     finally:
         # called on loop iter end or unexpected exit

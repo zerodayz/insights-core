@@ -18,8 +18,6 @@ class InsightsConstants(object):
     default_log_file = os.path.join(log_dir, app_name + '.log')
     default_sed_file = os.path.join(default_conf_dir, '.exp.sed')
     base_url = ''
-    collection_rules_file = os.path.join(default_conf_dir, '.cache.json')
-    collection_fallback_file = os.path.join(default_conf_dir, '.fallback.json')
     unregistered_files = [os.path.join(default_conf_dir, '.unregistered'),
                           os.path.join(simple_find_replace_dir, '.unregistered')]
     registered_files = [os.path.join(default_conf_dir, '.registered'),
