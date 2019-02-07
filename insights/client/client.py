@@ -88,6 +88,7 @@ def set_up_logging(config):
         logger.debug("Logging initialized")
 
 
+# TODO: going byebye soon
 def register(config, pconn):
     """
     Do registration using basic auth
@@ -102,7 +103,7 @@ def register(config, pconn):
     return pconn.register()
 
 
-# TODO: eventually remove this function. Only valid for legacy stuff
+# TODO: going byebye soon
 def handle_registration(config, pconn):
     '''
         Handle the registration process
@@ -174,6 +175,7 @@ def handle_registration(config, pconn):
         return False
 
 
+# TODO: going byebye soon
 def get_registration_status(config, pconn):
     '''
         Handle the registration process
@@ -185,6 +187,7 @@ def get_registration_status(config, pconn):
     return registration_check(pconn)
 
 
+# TODO: going byebye soon
 def handle_unregistration(config, pconn):
     """
         returns (bool): True success, False failure
@@ -199,15 +202,6 @@ def handle_unregistration(config, pconn):
 
 def get_machine_id():
     return generate_machine_id()
-
-
-def update_rules(config, pconn):
-    if not pconn:
-        raise ValueError('ERROR: Cannot update rules in --offline mode. '
-                         'Disable auto_update in config file.')
-
-    pc = InsightsUploadConf(config, conn=pconn)
-    return pc.get_conf_update()
 
 
 def get_branch_info(config, pconn):

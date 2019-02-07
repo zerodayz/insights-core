@@ -3,25 +3,17 @@ Collect all the interesting data for analysis
 """
 from __future__ import absolute_import
 import os
-import errno
 import json
 from . import archive
 import logging
-import copy
-import glob
 import six
-import shlex
-from subprocess import Popen, PIPE, STDOUT
 from tempfile import NamedTemporaryFile
 
 from insights import collect
-from insights.util import mangle
 from ..contrib.soscleaner import SOSCleaner
-from .utilities import _expand_paths, generate_machine_id
+from .utilities import generate_machine_id
 from .constants import InsightsConstants as constants
-from .insights_spec import InsightsFile, InsightsCommand
 
-APP_NAME = constants.app_name
 logger = logging.getLogger(__name__)
 # python 2.7
 SOSCLEANER_LOGGER = logging.getLogger('soscleaner')
@@ -35,20 +27,19 @@ class DataCollector(object):
     '''
     Run commands and collect files
     '''
-
     def __init__(self, config, archive_=None, mountpoint=None):
         self.config = config
         self.archive = archive_ if archive_ else archive.InsightsArchive()
         self.mountpoint = '/'
         if mountpoint:
             self.mountpoint = mountpoint
-        self.hostname_path = None
         self.rm_conf = self.get_rm_conf()
 
     def _write_branch_info(self, branch_info):
         logger.debug("Writing branch information to archive...")
         self.archive.add_metadata_to_archive(
             json.dumps(branch_info), '/branch_info')
+        # temporary. probably not needed
         self.archive.add_metadata_to_archive(
             generate_machine_id(), '/etc/redhat-access-insights/machine-id')
 
@@ -129,7 +120,7 @@ class DataCollector(object):
         if self.config.obfuscate:
             cleaner = SOSCleaner(quiet=True)
             clean_opts = CleanOptions(
-                self.config, self.archive.tmp_dir, self.rm_conf, self.hostname_path)
+                self.config, self.archive.tmp_dir, self.rm_conf)
             fresh = cleaner.clean_report(clean_opts, self.archive.archive_dir)
             if clean_opts.keyword_file is not None:
                 os.remove(clean_opts.keyword_file.name)
@@ -141,7 +132,7 @@ class CleanOptions(object):
     """
     Options for soscleaner
     """
-    def __init__(self, config, tmp_dir, rm_conf, hostname_path):
+    def __init__(self, config, tmp_dir, rm_conf):
         self.report_dir = tmp_dir
         self.domains = []
         self.files = []
@@ -163,6 +154,6 @@ class CleanOptions(object):
 
         if config.obfuscate_hostname:
             # default to its original location
-            self.hostname_path = hostname_path or 'insights_commands/hostname'
+            self.hostname_path = 'insights_commands/hostname'
         else:
             self.hostname_path = None

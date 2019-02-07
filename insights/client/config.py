@@ -72,10 +72,6 @@ DEFAULT_OPTS = {
         # non-CLI
         'default': constants.default_cmd_timeout
     },
-    'collection_rules_url': {
-        # non-CLI
-        'default': None
-    },
     'compressor': {
         'default': 'gz',
         'opt': ['--compressor'],
