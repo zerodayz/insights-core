@@ -29,16 +29,17 @@ def parse_bool(s, default=False):
     return TRUTH.get(s.lower(), default)
 
 
-def which(cmd, env=None):
+def which(cmd, env=None, root="/"):
     env = env or os.environ
-    if cmd.startswith("/"):
+    if cmd.startswith(os.sep):
+        cmd = os.path.join(root, cmd.lstrip(os.sep))
         if os.access(cmd, os.X_OK) and os.path.isfile(cmd):
             return cmd
         return None
 
     paths = env.get("PATH").split(os.pathsep)
     for path in paths:
-        c = os.path.join(path, cmd)
+        c = os.path.join(root, path.lstrip(os.sep), cmd)
         if os.access(c, os.X_OK) and os.path.isfile(c):
             return c
     return None

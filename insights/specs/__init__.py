@@ -1,6 +1,32 @@
 from insights.core.spec_factory import SpecSet, RegistryPoint
 
 
+def _make_rpm_formatter(fmt=None):
+    if fmt is None:
+        fmt = [
+            '"name":"%{NAME}"',
+            '"epoch":"%{EPOCH}"',
+            '"version":"%{VERSION}"',
+            '"release":"%{RELEASE}"',
+            '"arch":"%{ARCH}"',
+            '"installtime":"%{INSTALLTIME:date}"',
+            '"buildtime":"%{BUILDTIME}"',
+            '"vendor":"%{VENDOR}"',
+            '"buildhost":"%{BUILDHOST}"',
+            '"sigpgp":"%{SIGPGP:pgpsig}"'
+        ]
+
+    def inner(idx=None):
+        if idx:
+            return "\{" + ",".join(fmt[:idx]) + "\}\n"
+        else:
+            return "\{" + ",".join(fmt) + "\}\n"
+    return inner
+
+
+format_rpm = _make_rpm_formatter()
+
+
 class Specs(SpecSet):
     amq_broker = RegistryPoint(multi_output=True)
     auditctl_status = RegistryPoint()

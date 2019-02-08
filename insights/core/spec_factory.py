@@ -13,7 +13,7 @@ from insights.core import blacklist, dr
 from insights.core.filters import get_filters
 from insights.core.context import ExecutionContext, FSRoots, HostContext
 from insights.core.plugins import datasource, ContentException, is_datasource
-from insights.util import fs, streams, which
+from insights.util import fs, which
 from insights.util.subproc import Pipeline
 from insights.core.serde import deserializer, serializer
 import shlex
@@ -222,7 +222,7 @@ class TextFileProvider(FileProvider):
             else:
                 args = self.create_args()
                 if args:
-                    with streams.connect(*args, env=SAFE_ENV) as s:
+                    with self.ctx.connect(*args, env=SAFE_ENV) as s:
                         yield s
                 else:
                     with open(self.path, "rU") as f:  # universal newlines
@@ -237,6 +237,7 @@ class TextFileProvider(FileProvider):
         fs.ensure_path(os.path.dirname(dst))
         args = self.create_args()
         if args:
+            args = self.ctx.prepare_commands(args)
             p = Pipeline(*args, env=SAFE_ENV)
             p.write(dst)
         else:
@@ -266,7 +267,7 @@ class CommandOutputProvider(ContentProvider):
         self.split = split
         self.keep_rc = keep_rc
         self.ds = ds
-        self.timeout = timeout
+        self.timeout = timeout or ctx.timeout
         self.inherit_env = inherit_env or []
 
         self._content = None
@@ -278,7 +279,7 @@ class CommandOutputProvider(ContentProvider):
         if not blacklist.allow_command(self.cmd):
             raise dr.SkipComponent()
 
-        if not which(shlex.split(self.cmd)[0], env=self.create_env()):
+        if not which(shlex.split(self.cmd)[0], env=self.create_env(), root=self.ctx.root):
             raise ContentException("Couldn't execute: %s" % self.cmd)
 
     def create_args(self):
@@ -342,6 +343,7 @@ class CommandOutputProvider(ContentProvider):
         args = self.create_args()
         fs.ensure_path(os.path.dirname(dst))
         if args:
+            args = self.ctx.prepare_commands(args)
             p = Pipeline(*args, timeout=self.timeout, env=self.create_env())
             return p.write(dst, keep_rc=self.keep_rc)
 
@@ -487,7 +489,7 @@ class SpecSet(six.with_metaclass(SpecSetMeta)):
     pass
 
 
-def _get_context(context, broker):
+def find_context(context, broker):
     if isinstance(context, list):
         return dr.first_of(context, broker)
     return broker.get(context)
@@ -515,7 +517,7 @@ class simple_file(object):
         datasource(self.context, *deps, raw=self.raw, **kwargs)(self)
 
     def __call__(self, broker):
-        ctx = _get_context(self.context, broker)
+        ctx = find_context(self.context, broker)
         return self.kind(ctx.locate_path(self.path), root=ctx.root, ds=self, ctx=ctx)
 
 
@@ -549,7 +551,7 @@ class glob_file(object):
         datasource(self.context, *deps, multi_output=True, raw=self.raw, **kwargs)(self)
 
     def __call__(self, broker):
-        ctx = _get_context(self.context, broker)
+        ctx = find_context(self.context, broker)
         root = ctx.root
         results = []
         for pattern in self.patterns:
@@ -610,7 +612,7 @@ class first_file(object):
         datasource(self.context, *deps, raw=self.raw, **kwargs)(self)
 
     def __call__(self, broker):
-        ctx = _get_context(self.context, broker)
+        ctx = find_context(self.context, broker)
         root = ctx.root
         for p in self.paths:
             try:
@@ -645,7 +647,7 @@ class listdir(object):
         datasource(self.context, *deps)(self)
 
     def __call__(self, broker):
-        ctx = _get_context(self.context, broker)
+        ctx = find_context(self.context, broker)
         p = os.path.join(ctx.root, self.path.lstrip('/'))
         p = ctx.locate_path(p)
         result = sorted(os.listdir(p)) if os.path.isdir(p) else sorted(glob(p))
@@ -695,7 +697,7 @@ class simple_command(object):
         datasource(self.context, *deps, raw=self.raw, **kwargs)(self)
 
     def __call__(self, broker):
-        ctx = broker[self.context]
+        ctx = find_context(self.context, broker)
         return CommandOutputProvider(self.cmd, ctx, split=self.split,
                 keep_rc=self.keep_rc, ds=self, timeout=self.timeout, inherit_env=self.inherit_env)
 
@@ -748,7 +750,7 @@ class foreach_execute(object):
     def __call__(self, broker):
         result = []
         source = broker[self.provider]
-        ctx = broker[self.context]
+        ctx = find_context(self.context, broker)
         if isinstance(source, ContentProvider):
             source = source.content
         if not isinstance(source, (list, set)):
@@ -798,7 +800,7 @@ class foreach_collect(object):
     def __call__(self, broker):
         result = []
         source = broker[self.provider]
-        ctx = _get_context(self.context, broker)
+        ctx = find_context(self.context, broker)
         root = ctx.root
         if isinstance(source, ContentProvider):
             source = source.content

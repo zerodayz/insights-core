@@ -78,9 +78,12 @@ class Pipeline(object):
 
         cmds = [shlex.split(c) if not isinstance(c, list) else c for c in cmds]
         timeout_command = which("timeout", env=self.env)
+        is_busybox = "busybox" in os.path.realpath(timeout_command)
         if timeout:
             if timeout_command:
-                to = shlex.split("timeout -s {0} {1}".format(signum, timeout))
+                to = ["timeout", "-s", str(int(signum))]
+                t_option = ["-t"] if is_busybox else []
+                to = to + t_option + [str(timeout)]
                 to.extend(cmds[0])
                 cmds[0] = to
             else:

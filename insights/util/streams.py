@@ -23,7 +23,8 @@ def reader(stream):
         yield line.rstrip("\n")
 
 
-timeout_command = [which("timeout"), "-s", str(signal.SIGKILL)]
+timeout_command = [which("timeout"), "-s", str(int(signal.SIGKILL))]
+is_busybox = "busybox" in os.path.realpath(which("timeout"))
 
 
 @contextmanager
@@ -57,7 +58,8 @@ def stream(command, stdin=None, env=os.environ, timeout=None):
     if timeout:
         if not timeout_command[0]:
             raise Exception("Timeout specified but timeout command not available.")
-        command = timeout_command + [str(timeout)] + command
+        t_option = ["-t"] if is_busybox else []
+        command = timeout_command + t_option + [str(timeout)] + command
 
     output = None
     try:

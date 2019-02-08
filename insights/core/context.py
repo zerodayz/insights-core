@@ -129,10 +129,17 @@ class ExecutionContext(object):
         self.timeout = timeout
         self.all_files = all_files or []
 
-    def check_output(self, cmd, timeout=None, keep_rc=False, env=None):
-        """ Subclasses can override to provide special
-            environment setup, command prefixes, etc.
+    def prepare_commands(self, cmd):
         """
+        Subclasses can override to mutate the commands.
+        """
+        return cmd
+
+    def check_output(self, cmd, timeout=None, keep_rc=False, env=None):
+        """
+        Subclasses can override to provide special environment setup, etc.
+        """
+        cmd = self.prepare_commands(cmd)
         return subproc.call(cmd, timeout=timeout or self.timeout,
                 keep_rc=keep_rc, env=env)
 
@@ -151,12 +158,13 @@ class ExecutionContext(object):
         return (rc, output) if keep_rc else output
 
     @contextmanager
-    def stream(self, *args, **kwargs):
-        with streams.stream(*args, **kwargs) as s:
+    def stream(self, cmd, **kwargs):
+        with streams.stream(cmd, **kwargs) as s:
             yield s
 
     @contextmanager
     def connect(self, *args, **kwargs):
+        args = self.prepare_commands(args)
         with streams.connect(*args, **kwargs) as s:
             yield s
 
@@ -209,6 +217,25 @@ class JDRContext(ExecutionContext):
     def locate_path(self, path):
         p = path.replace("$JBOSS_HOME", "JBOSS_HOME")
         return super(JDRContext, self).locate_path(p)
+
+
+@fs_root
+class KubeContext(ExecutionContext):
+    def prepare_commands(self, cmd):
+        cmd = list(cmd)
+        first = cmd[0]
+        prefix = ["chroot", self.root]
+        prefix.extend(first)
+        cmd[0] = prefix
+        return cmd
+
+    @contextmanager
+    def stream(self, cmd, **kwargs):
+        prefix = ["chroot", self.root]
+        prefix.extend(cmd)
+        cmd = prefix
+        with streams.stream(cmd, **kwargs) as s:
+            yield s
 
 
 class OpenStackContext(ExecutionContext):

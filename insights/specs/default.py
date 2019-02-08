@@ -23,34 +23,8 @@ from insights.core.spec_factory import simple_file, simple_command, glob_file
 from insights.core.spec_factory import first_of, foreach_collect, foreach_execute
 from insights.core.spec_factory import first_file, listdir
 from insights.parsers.mount import Mount
-from insights.specs import Specs
+from insights.specs import Specs, format_rpm
 from insights import SkipComponent
-
-
-def _make_rpm_formatter(fmt=None):
-    if fmt is None:
-        fmt = [
-            '"name":"%{NAME}"',
-            '"epoch":"%{EPOCH}"',
-            '"version":"%{VERSION}"',
-            '"release":"%{RELEASE}"',
-            '"arch":"%{ARCH}"',
-            '"installtime":"%{INSTALLTIME:date}"',
-            '"buildtime":"%{BUILDTIME}"',
-            '"vendor":"%{VENDOR}"',
-            '"buildhost":"%{BUILDHOST}"',
-            '"sigpgp":"%{SIGPGP:pgpsig}"'
-        ]
-
-    def inner(idx=None):
-        if idx:
-            return "\{" + ",".join(fmt[:idx]) + "\}\n"
-        else:
-            return "\{" + ",".join(fmt) + "\}\n"
-    return inner
-
-
-format_rpm = _make_rpm_formatter()
 
 
 class DefaultSpecs(Specs):
