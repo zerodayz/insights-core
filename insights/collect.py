@@ -218,7 +218,8 @@ def collect(manifest=default_manifest, tmp_path=None, compress=False):
     apply_configs(manifest.get("configs", []))
     to_persist = get_to_persist(manifest.get("persist", set()))
 
-    hostname = call("hostname", env=SAFE_ENV).strip()
+    ctx = create_context(manifest.get("context", {}))
+    hostname = ctx.shell_out([["hostname"]], env=SAFE_ENV, split=False).strip()
     suffix = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     relative_path = "insights-%s-%s" % (hostname, suffix)
     tmp_path = tmp_path or tempfile.gettempdir()
@@ -226,10 +227,8 @@ def collect(manifest=default_manifest, tmp_path=None, compress=False):
     fs.ensure_path(output_path)
     fs.touch(os.path.join(output_path, "insights_archive.txt"))
 
-    broker = dr.Broker()
-    ctx = create_context(manifest.get("context", {}))
-
     log.info("Using context %s", ctx)
+    broker = dr.Broker()
     broker[ctx.__class__] = ctx
 
     h = Hydration(output_path)
