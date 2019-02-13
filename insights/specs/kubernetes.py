@@ -10,6 +10,7 @@ rpm_format = format_rpm()
 
 
 class KubernetesSpecs(Specs):
+    hostname = simple_command("hostname")
     ps_aux = simple_command("/bin/ps aux")
     ps_auxcww = simple_command("/bin/ps auxcww")
     ps_auxww = simple_command("/bin/ps auxww")
