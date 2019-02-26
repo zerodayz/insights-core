@@ -71,9 +71,8 @@ def _safe_parse(ds):
         Specs.mac_addresses,
     ]
 )
-def canonical_facts(
-    insights_id, machine_id, bios_uuid, submanid, ips, fqdn, mac_addresses
-):
+def canonical_facts(insights_id, machine_id, bios_uuid, submanid, ips, fqdn,
+        mac_addresses):
     return make_metadata(
         insights_id=_safe_parse(insights_id),
         machine_id=_safe_parse(machine_id),
@@ -96,5 +95,7 @@ def get_canonical_facts(path=None):
 
 if __name__ == "__main__":
     import json
+    from insights import dr
+    dr.load_components("insights.specs.default", "insights.specs.insights_archive")
 
     print(json.dumps(get_canonical_facts()))
