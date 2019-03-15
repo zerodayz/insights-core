@@ -236,7 +236,7 @@ def run(component=None, root=None, print_summary=False,
     load_default_plugins()
 
     args = None
-    formatter = None
+    formatters = None
     if print_summary:
         import argparse
         import logging
